@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurel Pack — COD Scanner</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;700;800&display=swap');
+
+:root {
+–bg:       #0b0c0f;
+–surface:  #13151a;
+–border:   #1e2028;
+–accent:   #f5c518;
+–accent2:  #ff6b35;
+–ok:       #22c55e;
+–err:      #ef4444;
+–warn:     #f59e0b;
+–text:     #e8eaf0;
+–muted:    #5a5f72;
+–card:     #171921;
+}
+
+- { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘Sora’, sans-serif;
+min-height: 100vh;
+overflow-x: hidden;
+}
+
+/* ── HEADER ─────────────────────────────────── */
+header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 18px 28px;
+border-bottom: 1px solid var(–border);
+background: var(–surface);
+position: sticky;
+top: 0;
+z-index: 100;
+}
+.logo {
+display: flex;
+align-items: center;
+gap: 10px;
+}
+.logo-icon {
+width: 34px; height: 34px;
+background: var(–accent);
+border-radius: 8px;
+display: flex; align-items: center; justify-content: center;
+font-weight: 800;
+font-size: 15px;
+color: #000;
+letter-spacing: -1px;
+}
+.logo-text {
+font-size: 15px;
+font-weight: 700;
+letter-spacing: 0.02em;
+}
+.logo-text span { color: var(–accent); }
+
+.header-total {
+display: flex;
+flex-direction: column;
+align-items: flex-end;
+}
+.header-total-label {
+font-size: 10px;
+color: var(–muted);
+text-transform: uppercase;
+letter-spacing: 0.12em;
+font-family: ‘Space Mono’, monospace;
+}
+.header-total-value {
+font-size: 20px;
+font-weight: 800;
+color: var(–accent);
+font-family: ‘Space Mono’, monospace;
+letter-spacing: -0.5px;
+transition: all 0.3s;
+}
+
+/* ── MAIN LAYOUT ─────────────────────────────── */
+main {
+max-width: 860px;
+margin: 0 auto;
+padding: 32px 20px 80px;
+}
+
+/* ── DROP ZONE ───────────────────────────────── */
+.drop-zone {
+border: 2px dashed var(–border);
+border-radius: 16px;
+padding: 44px 24px;
+text-align: center;
+cursor: pointer;
+transition: border-color 0.2s, background 0.2s;
+position: relative;
+background: var(–surface);
+margin-bottom: 28px;
+}
+.drop-zone:hover,
+.drop-zone.drag-over {
+border-color: var(–accent);
+background: rgba(245,197,24,0.04);
+}
+.drop-zone input {
+position: absolute; inset: 0;
+width: 100%; height: 100%;
+opacity: 0; cursor: pointer;
+}
+.drop-icon {
+font-size: 38px;
+margin-bottom: 12px;
+}
+.drop-title {
+font-size: 16px;
+font-weight: 600;
+margin-bottom: 6px;
+}
+.drop-sub {
+font-size: 12px;
+color: var(–muted);
+font-family: ‘Space Mono’, monospace;
+}
+
+/* ── PROGRESS BAR ────────────────────────────── */
+.progress-wrap {
+margin-bottom: 28px;
+display: none;
+}
+.progress-wrap.visible { display: block; }
+.progress-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 8px;
+}
+.progress-label {
+font-size: 12px;
+color: var(–muted);
+font-family: ‘Space Mono’, monospace;
+}
+.progress-count {
+font-size: 12px;
+color: var(–accent);
+font-family: ‘Space Mono’, monospace;
+font-weight: 700;
+}
+.progress-bar-bg {
+height: 6px;
+background: var(–border);
+border-radius: 99px;
+overflow: hidden;
+}
+.progress-bar-fill {
+height: 100%;
+background: linear-gradient(90deg, var(–accent), var(–accent2));
+border-radius: 99px;
+transition: width 0.4s ease;
+width: 0%;
+}
+.progress-status {
+font-size: 11px;
+color: var(–muted);
+margin-top: 6px;
+font-family: ‘Space Mono’, monospace;
+min-height: 16px;
+}
+
+/* ── STATS ROW ───────────────────────────────── */
+.stats-row {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 12px;
+margin-bottom: 28px;
+}
+.stat-card {
+background: var(–card);
+border: 1px solid var(–border);
+border-radius: 12px;
+padding: 16px 18px;
+}
+.stat-label {
+font-size: 10px;
+color: var(–muted);
+text-transform: uppercase;
+letter-spacing: 0.12em;
+font-family: ‘Space Mono’, monospace;
+margin-bottom: 6px;
+}
+.stat-value {
+font-size: 22px;
+font-weight: 800;
+font-family: ‘Space Mono’, monospace;
+letter-spacing: -0.5px;
+}
+.stat-value.yellow  { color: var(–accent); }
+.stat-value.green   { color: var(–ok); }
+.stat-value.red     { color: var(–err); }
+
+/* ── GRAND TOTAL BANNER ──────────────────────── */
+.total-banner {
+background: linear-gradient(135deg, #1a1b00 0%, #1c1400 100%);
+border: 1px solid rgba(245,197,24,0.25);
+border-radius: 16px;
+padding: 24px 28px;
+margin-bottom: 28px;
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 16px;
+}
+.total-banner-left {}
+.total-banner-eyebrow {
+font-size: 10px;
+color: rgba(245,197,24,0.6);
+text-transform: uppercase;
+letter-spacing: 0.15em;
+font-family: ‘Space Mono’, monospace;
+margin-bottom: 4px;
+}
+.total-banner-amount {
+font-size: 38px;
+font-weight: 800;
+color: var(–accent);
+font-family: ‘Space Mono’, monospace;
+letter-spacing: -1px;
+line-height: 1;
+}
+.total-banner-currency {
+font-size: 14px;
+font-weight: 600;
+color: rgba(245,197,24,0.7);
+margin-left: 6px;
+}
+.total-banner-right {
+text-align: right;
+}
+.total-banner-packages {
+font-size: 13px;
+color: var(–muted);
+font-family: ‘Space Mono’, monospace;
+}
+.total-banner-packages strong {
+color: var(–text);
+font-size: 15px;
+}
+
+/* ── TABLE ───────────────────────────────────── */
+.table-wrap {
+background: var(–card);
+border: 1px solid var(–border);
+border-radius: 14px;
+overflow: hidden;
+}
+.table-head {
+display: grid;
+grid-template-columns: 40px 1fr 140px 130px 50px;
+padding: 12px 18px;
+background: var(–surface);
+border-bottom: 1px solid var(–border);
+font-size: 10px;
+color: var(–muted);
+text-transform: uppercase;
+letter-spacing: 0.12em;
+font-family: ‘Space Mono’, monospace;
+}
+.table-body { }
+
+.pkg-row {
+display: grid;
+grid-template-columns: 40px 1fr 140px 130px 50px;
+padding: 14px 18px;
+border-bottom: 1px solid var(–border);
+align-items: center;
+transition: background 0.15s;
+animation: rowIn 0.3s ease both;
+}
+.pkg-row:last-child { border-bottom: none; }
+.pkg-row:hover { background: rgba(255,255,255,0.02); }
+
+@keyframes rowIn {
+from { opacity: 0; transform: translateY(8px); }
+to   { opacity: 1; transform: translateY(0); }
+}
+
+.pkg-num {
+font-size: 12px;
+color: var(–muted);
+font-family: ‘Space Mono’, monospace;
+}
+
+.pkg-info { padding-right: 12px; }
+.pkg-filename {
+font-size: 12px;
+font-weight: 600;
+color: var(–text);
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+max-width: 220px;
+}
+.pkg-detail {
+font-size: 10px;
+color: var(–muted);
+font-family: ‘Space Mono’, monospace;
+margin-top: 2px;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+max-width: 220px;
+}
+
+.pkg-cod {
+font-size: 15px;
+font-weight: 700;
+font-family: ‘Space Mono’, monospace;
+color: var(–accent);
+}
+.pkg-cod.error { color: var(–err); font-size: 11px; font-weight: 400; }
+.pkg-cod.processing {
+color: var(–muted);
+font-size: 11px;
+display: flex;
+align-items: center;
+gap: 6px;
+}
+
+.pkg-status {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+font-size: 10px;
+font-family: ‘Space Mono’, monospace;
+padding: 3px 8px;
+border-radius: 99px;
+font-weight: 600;
+}
+.pkg-status.ok      { background: rgba(34,197,94,0.12);  color: var(–ok);  }
+.pkg-status.error   { background: rgba(239,68,68,0.12);  color: var(–err); }
+.pkg-status.pending { background: rgba(90,95,114,0.2);   color: var(–muted); }
+.pkg-status.processing { background: rgba(245,197,24,0.1); color: var(–warn); }
+
+.pkg-actions {
+display: flex;
+gap: 4px;
+justify-content: flex-end;
+}
+
+.btn-delete {
+width: 28px; height: 28px;
+border: none;
+background: rgba(239,68,68,0.1);
+color: var(–err);
+border-radius: 6px;
+cursor: pointer;
+display: flex; align-items: center; justify-content: center;
+font-size: 13px;
+transition: background 0.15s;
+flex-shrink: 0;
+}
+.btn-delete:hover { background: rgba(239,68,68,0.25); }
+
+/* ── SPINNER ─────────────────────────────────── */
+.spinner {
+width: 12px; height: 12px;
+border: 2px solid rgba(245,197,24,0.2);
+border-top-color: var(–warn);
+border-radius: 50%;
+animation: spin 0.7s linear infinite;
+flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── EMPTY STATE ─────────────────────────────── */
+.empty-state {
+padding: 48px 24px;
+text-align: center;
+color: var(–muted);
+}
+.empty-state-icon { font-size: 32px; margin-bottom: 12px; }
+.empty-state-text { font-size: 13px; font-family: ‘Space Mono’, monospace; }
+
+/* ── CLEAR BUTTON ────────────────────────────── */
+.bottom-bar {
+position: fixed;
+bottom: 0; left: 0; right: 0;
+padding: 14px 20px;
+background: rgba(11,12,15,0.92);
+backdrop-filter: blur(12px);
+border-top: 1px solid var(–border);
+display: flex;
+justify-content: center;
+z-index: 100;
+}
+.btn-clear-all {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 11px 24px;
+background: rgba(239,68,68,0.1);
+border: 1px solid rgba(239,68,68,0.2);
+color: var(–err);
+border-radius: 10px;
+font-family: ‘Space Mono’, monospace;
+font-size: 12px;
+font-weight: 700;
+cursor: pointer;
+transition: all 0.2s;
+letter-spacing: 0.05em;
+text-transform: uppercase;
+}
+.btn-clear-all:hover {
+background: rgba(239,68,68,0.2);
+border-color: rgba(239,68,68,0.4);
+}
+.btn-clear-all:disabled {
+opacity: 0.3;
+cursor: not-allowed;
+}
+
+/* ── CONFIRM MODAL ───────────────────────────── */
+.modal-overlay {
+display: none;
+position: fixed; inset: 0;
+background: rgba(0,0,0,0.75);
+backdrop-filter: blur(4px);
+z-index: 200;
+align-items: center;
+justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 16px;
+padding: 28px 28px 24px;
+width: 100%;
+max-width: 380px;
+margin: 16px;
+}
+.modal-icon { font-size: 28px; margin-bottom: 12px; }
+.modal-title {
+font-size: 16px;
+font-weight: 700;
+margin-bottom: 8px;
+}
+.modal-body {
+font-size: 13px;
+color: var(–muted);
+line-height: 1.6;
+margin-bottom: 24px;
+}
+.modal-total-preview {
+font-family: ‘Space Mono’, monospace;
+font-size: 20px;
+font-weight: 700;
+color: var(–accent);
+margin-bottom: 4px;
+}
+.modal-actions {
+display: flex;
+gap: 10px;
+justify-content: flex-end;
+}
+.btn-cancel {
+padding: 9px 20px;
+background: transparent;
+border: 1px solid var(–border);
+color: var(–text);
+border-radius: 8px;
+font-family: ‘Space Mono’, monospace;
+font-size: 12px;
+cursor: pointer;
+transition: border-color 0.15s;
+}
+.btn-cancel:hover { border-color: var(–muted); }
+.btn-confirm-delete {
+padding: 9px 20px;
+background: var(–err);
+border: none;
+color: #fff;
+border-radius: 8px;
+font-family: ‘Space Mono’, monospace;
+font-size: 12px;
+font-weight: 700;
+cursor: pointer;
+transition: background 0.15s;
+}
+.btn-confirm-delete:hover { background: #dc2626; }
+
+/* ── TOAST ───────────────────────────────────── */
+.toast {
+position: fixed;
+bottom: 80px;
+left: 50%;
+transform: translateX(-50%) translateY(20px);
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 10px;
+padding: 10px 20px;
+font-size: 12px;
+font-family: ‘Space Mono’, monospace;
+opacity: 0;
+transition: all 0.3s;
+pointer-events: none;
+white-space: nowrap;
+z-index: 300;
+}
+.toast.show {
+opacity: 1;
+transform: translateX(-50%) translateY(0);
+}
+.toast.ok-toast  { border-color: var(–ok);  color: var(–ok); }
+.toast.err-toast { border-color: var(–err); color: var(–err); }
+
+/* ── RESPONSIVE ──────────────────────────────── */
+@media (max-width: 600px) {
+.table-head,
+.pkg-row {
+grid-template-columns: 32px 1fr 110px 36px;
+}
+.table-head > :nth-child(4),
+.pkg-row > :nth-child(4) { display: none; }
+.stats-row { grid-template-columns: repeat(2, 1fr); }
+.stats-row .stat-card:last-child { grid-column: 1 / -1; }
+.total-banner { flex-direction: column; gap: 10px; }
+.total-banner-right { text-align: left; }
+.total-banner-amount { font-size: 28px; }
+header { padding: 14px 16px; }
+}
+</style>
+
+</head>
+<body>
+
+<!-- HEADER -->
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">AP</div>
+    <div class="logo-text">Aurel <span>COD</span> Scanner</div>
+  </div>
+  <div class="header-total">
+    <div class="header-total-label">Total del día</div>
+    <div class="header-total-value" id="headerTotal">DOP 0.00</div>
+  </div>
+</header>
+
+<!-- MAIN -->
+
+<main>
+
+  <!-- DROP ZONE -->
+
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <div class="drop-icon">📦</div>
+    <div class="drop-title">Arrastra fotos de etiquetas aquí</div>
+    <div class="drop-sub">o toca para seleccionar · JPG, PNG, HEIC · múltiples archivos</div>
+  </div>
+
+  <!-- PROGRESS -->
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-header">
+      <div class="progress-label">Procesando imágenes…</div>
+      <div class="progress-count" id="progressCount">0 / 0</div>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-status" id="progressStatus"></div>
+  </div>
+
+  <!-- STATS -->
+
+  <div class="stats-row" id="statsRow" style="display:none">
+    <div class="stat-card">
+      <div class="stat-label">Paquetes</div>
+      <div class="stat-value yellow" id="statTotal">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Leídos OK</div>
+      <div class="stat-value green" id="statOk">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Errores</div>
+      <div class="stat-value red" id="statErr">0</div>
+    </div>
+  </div>
+
+  <!-- TOTAL BANNER -->
+
+  <div class="total-banner" id="totalBanner" style="display:none">
+    <div class="total-banner-left">
+      <div class="total-banner-eyebrow">Total COD acumulado</div>
+      <div>
+        <span class="total-banner-amount" id="totalAmount">0.00</span>
+        <span class="total-banner-currency">DOP</span>
+      </div>
+    </div>
+    <div class="total-banner-right">
+      <div class="total-banner-packages">
+        <strong id="totalPackages">0</strong> paquetes COD
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+
+  <div class="table-wrap">
+    <div class="table-head">
+      <div>#</div>
+      <div>Archivo / Detalle</div>
+      <div>COD (DOP)</div>
+      <div>Estado</div>
+      <div></div>
+    </div>
+    <div class="table-body" id="tableBody">
+      <div class="empty-state">
+        <div class="empty-state-icon">🗂</div>
+        <div class="empty-state-text">Sin paquetes aún — sube las fotos</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- BOTTOM BAR -->
+
+<div class="bottom-bar">
+  <button class="btn-clear-all" id="btnClearAll" disabled>
+    ⚙️ &nbsp;Limpiar todo y reiniciar sesión
+  </button>
+</div>
+
+<!-- CONFIRM MODAL -->
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-icon">⚙️</div>
+    <div class="modal-title">¿Limpiar esta sesión?</div>
+    <div class="modal-body">
+      Se eliminarán todos los registros de la sesión actual.<br><br>
+      Total registrado hasta ahora:
+      <div class="modal-total-preview" id="modalTotalPreview">DOP 0.00</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btnCancel">Cancelar</button>
+      <button class="btn-confirm-delete" id="btnConfirmDelete">Sí, limpiar</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUREL COD SCANNER
+   ─ Lee etiquetas Aurel Pack/Logistics
+   ─ Extrae el valor COD (DOP) con Claude Vision API
+   ─ Acumula total del día de forma milimétrica
+   ─ Procesa de una en una con pausa controlada (sin rate-limit)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+const state = {
+  packages: [],          // { id, filename, status, cod, detail, rawText }
+  isProcessing: false,
+  queue: [],
+};
+
+// ── DOM REFS ───────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const tableBody     = $('tableBody');
+const headerTotal   = $('headerTotal');
+const totalAmount   = $('totalAmount');
+const totalPackages = $('totalPackages');
+const totalBanner   = $('totalBanner');
+const statsRow      = $('statsRow');
+const progressWrap  = $('progressWrap');
+const progressFill  = $('progressFill');
+const progressCount = $('progressCount');
+const progressStatus= $('progressStatus');
+const statTotal     = $('statTotal');
+const statOk        = $('statOk');
+const statErr       = $('statErr');
+const btnClearAll   = $('btnClearAll');
+const modalOverlay  = $('modalOverlay');
+const modalTotalPrev= $('modalTotalPreview');
+const toast         = $('toast');
+
+// ── UTILS ──────────────────────────────────────────────────────────────────
+function formatDOP(n) {
+  return 'DOP ' + n.toLocaleString('es-DO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function showToast(msg, type = 'ok') {
+  toast.textContent = msg;
+  toast.className = 'toast ' + (type === 'ok' ? 'ok-toast' : 'err-toast') + ' show';
+  setTimeout(() => toast.classList.remove('show'), 2800);
+}
+
+// ── TOTAL CALCULATION ──────────────────────────────────────────────────────
+// Uses integer arithmetic to avoid floating-point drift across 30+ entries.
+// Every COD is stored as integer centavos, sum is divided at display time only.
+function computeTotal() {
+  let centavos = 0;
+  for (const pkg of state.packages) {
+    if (pkg.status === 'ok' && typeof pkg.cod === 'number') {
+      // Round to nearest centavo before accumulating
+      centavos += Math.round(pkg.cod * 100);
+    }
+  }
+  // Return as float with exactly 2 decimal places
+  return centavos / 100;
+}
+
+// ── UI REFRESH ─────────────────────────────────────────────────────────────
+function refreshUI() {
+  const total   = computeTotal();
+  const ok      = state.packages.filter(p => p.status === 'ok').length;
+  const err     = state.packages.filter(p => p.status === 'error').length;
+  const pending = state.packages.filter(p => p.status === 'pending' || p.status === 'processing').length;
+  const n       = state.packages.length;
+
+  // Header
+  headerTotal.textContent = formatDOP(total);
+
+  // Stats
+  statTotal.textContent = n;
+  statOk.textContent    = ok;
+  statErr.textContent   = err;
+
+  // Banner
+  totalAmount.textContent   = total.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  totalPackages.textContent = ok;
+
+  // Show/hide panels
+  if (n > 0) {
+    statsRow.style.display = 'grid';
+    totalBanner.style.display = 'flex';
+  } else {
+    statsRow.style.display = 'none';
+    totalBanner.style.display = 'none';
+  }
+
+  // Clear button
+  btnClearAll.disabled = (n === 0);
+
+  // Rebuild table
+  renderTable();
+}
+
+function renderTable() {
+  if (state.packages.length === 0) {
+    tableBody.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🗂</div>
+        <div class="empty-state-text">Sin paquetes aún — sube las fotos</div>
+      </div>`;
+    return;
+  }
+
+  tableBody.innerHTML = state.packages.map((pkg, i) => {
+    // COD cell
+    let codCell = '';
+    if (pkg.status === 'ok') {
+      codCell = `<div class="pkg-cod">${pkg.cod.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>`;
+    } else if (pkg.status === 'error') {
+      codCell = `<div class="pkg-cod error">No detectado</div>`;
+    } else if (pkg.status === 'processing') {
+      codCell = `<div class="pkg-cod processing"><div class="spinner"></div>Analizando…</div>`;
+    } else {
+      codCell = `<div class="pkg-cod processing" style="color:var(--muted)">En cola</div>`;
+    }
+
+    // Status badge
+    let badge = '';
+    if (pkg.status === 'ok')         badge = `<span class="pkg-status ok">✓ Leído</span>`;
+    else if (pkg.status === 'error') badge = `<span class="pkg-status error">✗ Error</span>`;
+    else if (pkg.status === 'processing') badge = `<span class="pkg-status processing">… IA</span>`;
+    else                             badge = `<span class="pkg-status pending">— Cola</span>`;
+
+    // Truncate filename
+    const name = pkg.filename.length > 28
+      ? pkg.filename.slice(0, 25) + '…'
+      : pkg.filename;
+
+    const detail = pkg.detail
+      ? pkg.detail.slice(0, 40) + (pkg.detail.length > 40 ? '…' : '')
+      : '—';
+
+    return `
+      <div class="pkg-row" data-id="${pkg.id}">
+        <div class="pkg-num">${String(i + 1).padStart(2, '0')}</div>
+        <div class="pkg-info">
+          <div class="pkg-filename" title="${pkg.filename}">${name}</div>
+          <div class="pkg-detail">${detail}</div>
+        </div>
+        ${codCell}
+        ${badge}
+        <div class="pkg-actions">
+          <button class="btn-delete" title="Eliminar" onclick="deletePackage('${pkg.id}')">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── IMAGE → BASE64 ─────────────────────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── CLAUDE VISION CALL ─────────────────────────────────────────────────────
+// Sends ONE image at a time.
+// System prompt is extremely strict: return only the numeric value or ERROR.
+async function extractCOD(base64, mediaType) {
+  const SYSTEM = `Eres un sistema de extracción de datos de etiquetas de paquetes de Aurel Pack / Aurel Logistics.
+
+Tu ÚNICA tarea: encontrar el valor numérico del campo "COD" en la etiqueta.
+
+INSTRUCCIONES ESTRICTAS:
+1. Busca el campo que comience con "COD:" seguido de "DOP" y un número.
+   Ejemplos: "COD: DOP 2,000.00" → devuelve 2000.00
+             "COD: DOP 1,500.50" → devuelves 1500.50
+             "COD: DOP 12,300.00" → devuelves 12300.00
+2. El número usa coma como separador de miles y punto como decimal.
+   Debes devolver el número SIN comas, solo con punto decimal si aplica.
+3. Si el valor tiene centavos ".00", inclúyelos.
+4. Si NO puedes leer el campo COD (imagen borrosa, campo ausente, etiqueta distinta), responde EXACTAMENTE: ERROR
+5. No escribas NADA más. Solo el número o la palabra ERROR.
+6. No incluyas "DOP", no incluyas texto, no incluyas explicaciones.
+
+RESPUESTA VÁLIDA EJEMPLOS:
+2000.00
+1500.50
+12300.00
+ERROR`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 30,
+      system: SYSTEM,
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mediaType,
+            data: base64,
+          }
+        }, {
+          type: 'text',
+          text: 'Extrae el valor COD de esta etiqueta. Responde SOLO el número o ERROR.'
+        }]
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`API ${response.status}: ${errBody.slice(0, 120)}`);
+  }
+
+  const data = await response.json();
+  const raw = data.content?.[0]?.text?.trim() ?? 'ERROR';
+  return raw;
+}
+
+// ── PARSE COD STRING → NUMBER ──────────────────────────────────────────────
+// Handles: "2000.00", "1500", "1,500.00" (if model ever adds comma), "2.000,00"
+function parseCOD(raw) {
+  if (!raw || raw.toUpperCase() === 'ERROR') return null;
+
+  // Remove any stray DOP text
+  let s = raw.replace(/DOP/gi, '').trim();
+
+  // Determine if European format (comma as decimal): e.g. "2.000,00"
+  const hasCommaDecimal = /\d,\d{1,2}$/.test(s);
+  if (hasCommaDecimal) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Standard: remove thousands commas, keep decimal dot
+    s = s.replace(/,/g, '');
+  }
+
+  const n = parseFloat(s);
+  if (isNaN(n) || n < 0) return null;
+
+  // Sanity check: COD shouldn't be 0 or absurdly large (>1M DOP)
+  if (n === 0 || n > 1_000_000) return null;
+
+  return n;
+}
+
+// ── PROCESS QUEUE ──────────────────────────────────────────────────────────
+// Processes one image at a time. Waits 1.2s between calls to avoid
+// rate-limit bursts on large batches.
+async function processQueue() {
+  if (state.isProcessing) return;
+  state.isProcessing = true;
+
+  const total = state.queue.length + state.packages.filter(p => p.status === 'pending' || p.status === 'processing').length;
+  let done = state.packages.filter(p => p.status === 'ok' || p.status === 'error').length;
+
+  progressWrap.classList.add('visible');
+
+  while (state.queue.length > 0) {
+    const item = state.queue.shift();
+    const pkg  = state.packages.find(p => p.id === item.id);
+    if (!pkg) continue;
+
+    // Mark processing
+    pkg.status = 'processing';
+    refreshUI();
+
+    // Update progress
+    const allDone = state.packages.filter(p => p.status === 'ok' || p.status === 'error').length;
+    const allTotal = state.packages.length;
+    progressCount.textContent = `${allDone} / ${allTotal}`;
+    progressFill.style.width  = `${Math.round((allDone / allTotal) * 100)}%`;
+    progressStatus.textContent = `Analizando: ${pkg.filename}`;
+
+    try {
+      // Convert file to base64
+      const base64 = await fileToBase64(item.file);
+      const mediaType = item.file.type || 'image/jpeg';
+
+      // Call Claude Vision
+      const raw = await extractCOD(base64, mediaType);
+      const cod = parseCOD(raw);
+
+      if (cod !== null) {
+        pkg.status  = 'ok';
+        pkg.cod     = cod;
+        pkg.rawText = raw;
+        pkg.detail  = `COD raw: ${raw}`;
+      } else {
+        pkg.status  = 'error';
+        pkg.cod     = null;
+        pkg.rawText = raw;
+        pkg.detail  = `Respuesta IA: "${raw}"`;
+      }
+
+    } catch (err) {
+      pkg.status = 'error';
+      pkg.detail = err.message.slice(0, 80);
+    }
+
+    refreshUI();
+
+    // ── Pace control: wait 1.2s between images to be safe with API limits
+    if (state.queue.length > 0) {
+      progressStatus.textContent = `Esperando antes de la próxima imagen…`;
+      await sleep(1200);
+    }
+  }
+
+  // Final progress
+  const finalDone  = state.packages.filter(p => p.status === 'ok' || p.status === 'error').length;
+  const finalTotal = state.packages.length;
+  progressCount.textContent = `${finalDone} / ${finalTotal}`;
+  progressFill.style.width  = '100%';
+  progressStatus.textContent = `✓ Lote completado — ${finalDone} paquetes procesados`;
+
+  setTimeout(() => progressWrap.classList.remove('visible'), 3000);
+
+  state.isProcessing = false;
+  refreshUI();
+
+  const okCount  = state.packages.filter(p => p.status === 'ok').length;
+  const errCount = state.packages.filter(p => p.status === 'error').length;
+  if (errCount > 0) {
+    showToast(`${okCount} leídos · ${errCount} con error`, 'err');
+  } else {
+    showToast(`✓ ${okCount} paquetes leídos correctamente`, 'ok');
+  }
+}
+
+// ── ADD FILES ──────────────────────────────────────────────────────────────
+function addFiles(files) {
+  const newItems = [];
+
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+
+    const id  = uid();
+    const pkg = {
+      id,
+      filename: file.name,
+      status:   'pending',
+      cod:      null,
+      detail:   null,
+      rawText:  null,
+    };
+
+    state.packages.push(pkg);
+    state.queue.push({ id, file });
+    newItems.push(pkg);
+  }
+
+  if (newItems.length === 0) return;
+
+  refreshUI();
+  processQueue();
+}
+
+// ── DELETE ONE ─────────────────────────────────────────────────────────────
+function deletePackage(id) {
+  state.packages = state.packages.filter(p => p.id !== id);
+  state.queue    = state.queue.filter(q => q.id !== id);
+  refreshUI();
+  showToast('Paquete eliminado', 'ok');
+}
+window.deletePackage = deletePackage; // expose for inline onclick
+
+// ── CLEAR ALL ─────────────────────────────────────────────────────────────
+btnClearAll.addEventListener('click', () => {
+  if (state.packages.length === 0) return;
+  modalTotalPrev.textContent = formatDOP(computeTotal());
+  modalOverlay.classList.add('open');
+});
+
+$('btnCancel').addEventListener('click', () => {
+  modalOverlay.classList.remove('open');
+});
+
+$('btnConfirmDelete').addEventListener('click', () => {
+  state.packages = [];
+  state.queue    = [];
+  state.isProcessing = false;
+  progressWrap.classList.remove('visible');
+  modalOverlay.classList.remove('open');
+  refreshUI();
+  showToast('Sesión limpiada', 'ok');
+});
+
+// ── FILE INPUT ─────────────────────────────────────────────────────────────
+$('fileInput').addEventListener('change', e => {
+  addFiles(Array.from(e.target.files));
+  e.target.value = ''; // Reset so same file can be re-added
+});
+
+// ── DRAG & DROP ────────────────────────────────────────────────────────────
+const dropZone = $('dropZone');
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => {
+  dropZone.classList.remove('drag-over');
+});
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files);
+  addFiles(files);
+});
+
+// ── CLOSE MODAL ON OVERLAY CLICK ──────────────────────────────────────────
+modalOverlay.addEventListener('click', e => {
+  if (e.target === modalOverlay) modalOverlay.classList.remove('open');
+});
+
+// ── INITIAL RENDER ─────────────────────────────────────────────────────────
+refreshUI();
+</script>
+
+</body>
+</html>
