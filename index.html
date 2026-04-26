@@ -594,22 +594,20 @@ line-height: 1.9 !important;
       try {
         const zip    = await JSZip.loadAsync(entry.zipData);
         const names  = Object.keys(zip.files).filter(n => !zip.files[n].dir);
-        const folder = entry.file.name.replace(/\.zip$/i, '');
         let localDone = 0;
 
         for (const name of names) {
-          const data = await zip.files[name].async('uint8array');
-          outputZip.file(`${folder}/${name}`, data);
+          const data     = await zip.files[name].async('uint8array');
+          // Sin carpeta — solo el nombre del archivo (parte final del path)
+          const basename = name.split('/').pop();
+          outputZip.file(basename, data);
           localDone++;
           processed++;
-          // FIX #8: sin setTimeout artificial — actualización directa
           if (fill) fill.style.width = Math.round((localDone / names.length) * 100) + '%';
           if (totalFiles > 0) setGlobal((processed / totalFiles) * 100);
-          // FIX #9: log solo cada 10 archivos para no saturar el DOM
           if (localDone === 1 || localDone % 10 === 0 || localDone === names.length) {
-            addLog(`+ ${folder}/ (${localDone}/${names.length})`, 'ok');
+            addLog(`+ ${basename} (${localDone}/${names.length})`, 'ok');
           }
-          // Ceder el hilo al navegador sin delay fijo
           if (localDone % 20 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
