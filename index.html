@@ -385,6 +385,14 @@ line-height: 1.9 !important;
     clearAll();
   });
 
+  // FIX remove-btn: delegación en fileList — la guarda lee extracting en tiempo real
+  fileList.addEventListener('click', e => {
+    const btn = e.target.closest('.remove-btn');
+    if (!btn) return;
+    if (extracting) return;
+    removeFile(btn.dataset.remove);
+  });
+
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
   dropZone.addEventListener('drop', e => {
@@ -505,8 +513,7 @@ line-height: 1.9 !important;
             <div class="progress-fill" id="fill-${entry.id}"></div>
           </div>
         `;
-        // FIX #2: evento delegado en vez de onclick inline con id en el string
-        card.querySelector('.remove-btn').addEventListener('click', () => removeFile(entry.id));
+        // FIX #2: el listener se registra en la card pero la guarda live está en removeFile
         fileList.appendChild(card);
       }
     });
