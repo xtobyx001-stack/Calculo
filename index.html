@@ -1,623 +1,497 @@
-import { useState, useRef, useCallback } from “react”;
+<!DOCTYPE html>
 
-/* ─── INTEGER-SAFE TOTAL ───────────────────────────────────────────────────
-Every COD is stored as integer centavos to avoid float drift across 30+ entries.
-e.g. 2000.00 → 200000 centavos. Final display divides by 100.
-─────────────────────────────────────────────────────────────────────────── */
-function sumCentavos(packages) {
-return packages
-.filter(p => p.status === “ok” && typeof p.cod === “number”)
-.reduce((acc, p) => acc + Math.round(p.cod * 100), 0);
-}
-function formatDOP(centavos) {
-const n = centavos / 100;
-return “DOP “ + n.toLocaleString(“es-DO”, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MultiExtract</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
 
-/* ─── ROBUST COD PARSER ────────────────────────────────────────────────────
-5-method cascade. Handles: clean number, text-wrapped, EU format, thousands comma.
-─────────────────────────────────────────────────────────────────────────── */
-function parseCOD(raw) {
-if (!raw) return null;
-const up = raw.toUpperCase().trim();
-if (up === “ERROR” || up === “NOT FOUND” || (up.includes(“ERROR”) && !/\d/.test(raw))) return null;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-// M1: clean number
-const c = raw.replace(/DOP/gi, “”).replace(/\s/g, “”).trim();
-if (/^\d{1,7}(.\d{1,2})?$/.test(c)) {
-const n = parseFloat(c);
-if (n > 0 && n <= 1e6) return Math.round(n * 100) / 100;
-}
-// M2: European 2.000,00
-const eu = raw.match(/\b(\d{1,3}(?:.\d{3})+),(\d{2})\b/);
-if (eu) {
-const n = parseFloat(eu[0].replace(/./g, “”).replace(”,”, “.”));
-if (n > 0 && n <= 1e6) return Math.round(n * 100) / 100;
-}
-// M3: thousands comma 2,000.00
-const tc = raw.match(/\b(\d{1,3}(?:,\d{3})+(?:.\d{1,2})?)\b/);
-if (tc) {
-const n = parseFloat(tc[0].replace(/,/g, “”));
-if (n > 0 && n <= 1e6) return Math.round(n * 100) / 100;
-}
-// M4: any number ≥100 in text
-const nums = [];
-const re = /\b(\d{3,7}(?:.\d{1,2})?)\b/g;
-let m;
-while ((m = re.exec(raw)) !== null) {
-const n = parseFloat(m[1]);
-if (n >= 100 && n <= 1e6) nums.push(n);
-}
-if (nums.length === 1) return Math.round(nums[0] * 100) / 100;
-if (nums.length > 1) {
-const afterCOD = raw.match(/COD[^0-9]*(\d+(?:[.,]\d+)?)/i);
-if (afterCOD) {
-const n = parseFloat(afterCOD[1].replace(/,/g, “”));
-if (n >= 100 && n <= 1e6) return Math.round(n * 100) / 100;
-}
-const best = Math.max(…nums.filter(n => n >= 100 && n <= 999999));
-if (best > 0) return Math.round(best * 100) / 100;
-}
-// M5: decimal standalone
-const sm = raw.match(/\b(\d{2,6}.\d{2})\b/);
-if (sm) {
-const n = parseFloat(sm[1]);
-if (n > 0 && n <= 1e6) return Math.round(n * 100) / 100;
-}
-return null;
+:root {
+–bg: #0d0d0d;
+–surface: #161616;
+–border: #2a2a2a;
+–accent: #e8ff47;
+–accent2: #ff6b35;
+–text: #f0f0f0;
+–muted: #666;
+–success: #47ffb8;
+–error: #ff4757;
 }
 
-/* ─── ANTHROPIC VISION CALL ────────────────────────────────────────────────
-Uses the internal Anthropic API proxy — no CORS, no API key needed here.
-─────────────────────────────────────────────────────────────────────────── */
-async function extractCODFromImage(base64, mediaType) {
-const SYSTEM = `Eres un extractor de datos de etiquetas Aurel Pack / Aurel Logistics.
-Tu UNICA tarea: encontrar el valor del campo COD en la etiqueta.
-El campo luce asi: COD: DOP 2,000.00
-REGLAS ESTRICTAS:
-
-- Devuelve SOLO el numero sin comas ni simbolos. Ejemplo: 2000.00
-- Si hay centavos como .00 incluyelos.
-- Si no puedes leer el COD responde exactamente: ERROR
-- No escribas NADA mas. Solo el numero o ERROR.`;
-  
-  const res = await fetch(“https://api.anthropic.com/v1/messages”, {
-  method: “POST”,
-  headers: { “Content-Type”: “application/json” },
-  body: JSON.stringify({
-  model: “claude-sonnet-4-20250514”,
-  max_tokens: 30,
-  system: SYSTEM,
-  messages: [{
-  role: “user”,
-  content: [
-  { type: “image”, source: { type: “base64”, media_type: mediaType, data: base64 } },
-  { type: “text”,  text: “Extrae el valor COD. Responde SOLO el numero o ERROR.” }
-  ]
-  }]
-  })
-  });
-  
-  if (!res.ok) {
-  const err = await res.text();
-  throw new Error(`API ${res.status}: ${err.slice(0, 100)}`);
-  }
-  const data = await res.json();
-  return (data?.content?.[0]?.text ?? “ERROR”).trim();
-  }
-
-function fileToBase64(file) {
-return new Promise((resolve, reject) => {
-const r = new FileReader();
-r.onload  = () => resolve(r.result.split(”,”)[1]);
-r.onerror = () => reject(new Error(“Read failed”));
-r.readAsDataURL(file);
-});
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘Syne’, sans-serif;
+min-height: 100vh;
+display: flex;
+flex-direction: column;
+align-items: center;
+padding: 40px 20px;
 }
 
-function uid() {
-return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+header {
+width: 100%;
+max-width: 820px;
+margin-bottom: 48px;
+display: flex;
+align-items: baseline;
+gap: 12px;
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-/* ─── STYLES ────────────────────────────────────────────────────────────── */
-const S = {
-root: {
-minHeight: “100vh”,
-backgroundColor: “#0b0c0f”,
-color: “#e8eaf0”,
-fontFamily: “‘Sora’, ‘Segoe UI’, sans-serif”,
-fontSize: “14px”,
-},
-header: {
-display: “flex”,
-alignItems: “center”,
-justifyContent: “space-between”,
-padding: “16px 20px”,
-backgroundColor: “#13151a”,
-borderBottom: “1px solid #1e2028”,
-position: “sticky”,
-top: 0,
-zIndex: 50,
-},
-logoWrap: { display: “flex”, alignItems: “center”, gap: “10px” },
-logoBox: {
-width: 34, height: 34,
-backgroundColor: “#f5c518”,
-borderRadius: 8,
-display: “flex”, alignItems: “center”, justifyContent: “center”,
-fontWeight: 800, fontSize: 13, color: “#000”, letterSpacing: “-1px”,
-flexShrink: 0,
-},
-logoText: { fontWeight: 700, fontSize: 14, color: “#e8eaf0” },
-logoAccent: { color: “#f5c518” },
-totalWrap: { textAlign: “right” },
-totalLabel: { fontSize: 9, color: “#5a5f72”, textTransform: “uppercase”, letterSpacing: “0.12em”, fontFamily: “monospace” },
-totalValue: { fontSize: 20, fontWeight: 800, color: “#f5c518”, fontFamily: “monospace”, letterSpacing: “-0.5px” },
-main: { maxWidth: 860, margin: “0 auto”, padding: “24px 16px 90px” },
-
-// Drop zone
-dropZone: (dragging) => ({
-border: `2px dashed ${dragging ? "#f5c518" : "#2a2d38"}`,
-borderRadius: 14,
-padding: “36px 20px”,
-textAlign: “center”,
-cursor: “pointer”,
-backgroundColor: dragging ? “#191900” : “#13151a”,
-marginBottom: 24,
-transition: “all 0.2s”,
-position: “relative”,
-}),
-dropIcon: { fontSize: 36, marginBottom: 10, display: “block” },
-dropTitle: { fontSize: 16, fontWeight: 700, color: “#e8eaf0”, marginBottom: 6 },
-dropSub: { fontSize: 11, color: “#5a5f72”, fontFamily: “monospace” },
-
-// Progress
-progressWrap: { marginBottom: 24 },
-progressHeader: { display: “flex”, justifyContent: “space-between”, marginBottom: 7 },
-progressLabel: { fontSize: 11, color: “#5a5f72”, fontFamily: “monospace” },
-progressCount: { fontSize: 11, color: “#f5c518”, fontFamily: “monospace”, fontWeight: 700 },
-progressBg: { height: 5, backgroundColor: “#1e2028”, borderRadius: 99, overflow: “hidden” },
-progressFill: (pct) => ({
-height: “100%”,
-width: `${pct}%`,
-background: “linear-gradient(90deg, #f5c518, #ff6b35)”,
-borderRadius: 99,
-transition: “width 0.4s ease”,
-}),
-progressStatus: { fontSize: 10, color: “#5a5f72”, marginTop: 5, fontFamily: “monospace” },
-
-// Stats
-statsRow: { display: “grid”, gridTemplateColumns: “repeat(3,1fr)”, gap: 10, marginBottom: 22 },
-statCard: { backgroundColor: “#171921”, border: “1px solid #1e2028”, borderRadius: 12, padding: “14px 16px” },
-statLabel: { fontSize: 9, color: “#5a5f72”, textTransform: “uppercase”, letterSpacing: “0.12em”, fontFamily: “monospace”, marginBottom: 5 },
-statVal: (color) => ({ fontSize: 24, fontWeight: 800, fontFamily: “monospace”, color }),
-
-// Banner
-banner: {
-background: “linear-gradient(135deg,#1a1b00,#1c1400)”,
-border: “1px solid rgba(245,197,24,0.22)”,
-borderRadius: 14,
-padding: “20px 22px”,
-marginBottom: 22,
-display: “flex”,
-alignItems: “center”,
-justifyContent: “space-between”,
-gap: 12,
-flexWrap: “wrap”,
-},
-bannerEye: { fontSize: 9, color: “rgba(245,197,24,0.6)”, textTransform: “uppercase”, letterSpacing: “0.15em”, fontFamily: “monospace”, marginBottom: 3 },
-bannerAmt: { fontSize: 32, fontWeight: 800, color: “#f5c518”, fontFamily: “monospace”, letterSpacing: “-1px”, lineHeight: 1 },
-bannerCur: { fontSize: 13, color: “rgba(245,197,24,0.65)”, marginLeft: 5 },
-bannerPkg: { fontSize: 12, color: “#5a5f72”, fontFamily: “monospace” },
-bannerPkgN: { color: “#e8eaf0”, fontWeight: 700 },
-
-// Table
-tableWrap: { backgroundColor: “#171921”, border: “1px solid #1e2028”, borderRadius: 13, overflow: “hidden” },
-tableHead: {
-display: “grid”,
-gridTemplateColumns: “36px 1fr 120px 100px 38px”,
-padding: “10px 14px”,
-backgroundColor: “#13151a”,
-borderBottom: “1px solid #1e2028”,
-fontSize: 9,
-color: “#5a5f72”,
-textTransform: “uppercase”,
-letterSpacing: “0.1em”,
-fontFamily: “monospace”,
-},
-row: {
-display: “grid”,
-gridTemplateColumns: “36px 1fr 120px 100px 38px”,
-padding: “12px 14px”,
-borderBottom: “1px solid #1e2028”,
-alignItems: “center”,
-backgroundColor: “#171921”,
-},
-rowNum: { fontSize: 11, color: “#5a5f72”, fontFamily: “monospace” },
-rowName: { fontSize: 12, fontWeight: 600, color: “#e8eaf0”, overflow: “hidden”, textOverflow: “ellipsis”, whiteSpace: “nowrap” },
-rowDetail: { fontSize: 10, color: “#5a5f72”, fontFamily: “monospace”, marginTop: 2, overflow: “hidden”, textOverflow: “ellipsis”, whiteSpace: “nowrap” },
-rowCodOk: { fontSize: 14, fontWeight: 700, fontFamily: “monospace”, color: “#f5c518” },
-rowCodErr: { fontSize: 10, color: “#ef4444” },
-rowCodProc: { fontSize: 10, color: “#5a5f72”, display: “flex”, alignItems: “center”, gap: 5 },
-badge: (type) => {
-const map = {
-ok:         { bg: “rgba(34,197,94,0.13)”,  color: “#22c55e” },
-error:      { bg: “rgba(239,68,68,0.13)”,  color: “#ef4444” },
-processing: { bg: “rgba(245,197,24,0.1)”,  color: “#f59e0b” },
-pending:    { bg: “rgba(90,95,114,0.2)”,   color: “#5a5f72” },
-};
-const s = map[type] || map.pending;
-return {
-display: “inline-flex”, alignItems: “center”,
-fontSize: 9, fontFamily: “monospace”, fontWeight: 700,
-padding: “3px 7px”, borderRadius: 99,
-backgroundColor: s.bg, color: s.color,
-};
-},
-delBtn: {
-width: 26, height: 26,
-border: “none”,
-backgroundColor: “rgba(239,68,68,0.12)”,
-color: “#ef4444”,
-borderRadius: 6,
-cursor: “pointer”,
-fontSize: 12,
-display: “flex”, alignItems: “center”, justifyContent: “center”,
-},
-emptyState: { padding: “44px 20px”, textAlign: “center”, color: “#5a5f72” },
-emptyIcon: { fontSize: 30, marginBottom: 10, display: “block” },
-emptyText: { fontSize: 12, fontFamily: “monospace” },
-
-// Bottom bar
-bottomBar: {
-position: “fixed”, bottom: 0, left: 0, right: 0,
-padding: “12px 16px”,
-backgroundColor: “rgba(11,12,15,0.97)”,
-borderTop: “1px solid #1e2028”,
-display: “flex”, justifyContent: “center”,
-zIndex: 50,
-},
-clearBtn: (disabled) => ({
-display: “flex”, alignItems: “center”, gap: 7,
-padding: “10px 22px”,
-backgroundColor: “rgba(239,68,68,0.1)”,
-border: “1px solid rgba(239,68,68,0.22)”,
-color: “#ef4444”,
-borderRadius: 10,
-fontFamily: “monospace”, fontSize: 11, fontWeight: 700,
-cursor: disabled ? “not-allowed” : “pointer”,
-opacity: disabled ? 0.35 : 1,
-textTransform: “uppercase”, letterSpacing: “0.05em”,
-}),
-
-// Modal
-overlay: {
-position: “fixed”, inset: 0,
-backgroundColor: “rgba(0,0,0,0.8)”,
-display: “flex”, alignItems: “center”, justifyContent: “center”,
-zIndex: 100, padding: 16,
-},
-modal: {
-backgroundColor: “#13151a”,
-border: “1px solid #1e2028”,
-borderRadius: 14,
-padding: “24px 24px 20px”,
-width: “100%”, maxWidth: 360,
-},
-modalIcon: { fontSize: 26, marginBottom: 10 },
-modalTitle: { fontSize: 15, fontWeight: 700, color: “#e8eaf0”, marginBottom: 7 },
-modalBody: { fontSize: 12, color: “#5a5f72”, lineHeight: 1.7, marginBottom: 20 },
-modalTotal: { fontSize: 18, fontWeight: 700, color: “#f5c518”, fontFamily: “monospace”, marginTop: 4 },
-modalActions: { display: “flex”, gap: 8, justifyContent: “flex-end” },
-btnCancel: {
-padding: “8px 18px”,
-backgroundColor: “transparent”,
-border: “1px solid #1e2028”,
-color: “#e8eaf0”,
-borderRadius: 8,
-fontFamily: “monospace”, fontSize: 11,
-cursor: “pointer”,
-},
-btnConfirm: {
-padding: “8px 18px”,
-backgroundColor: “#ef4444”,
-border: “none”,
-color: “#fff”,
-borderRadius: 8,
-fontFamily: “monospace”, fontSize: 11, fontWeight: 700,
-cursor: “pointer”,
-},
-
-// Spinner
-spinner: {
-width: 11, height: 11,
-border: “2px solid rgba(245,197,24,0.15)”,
-borderTopColor: “#f59e0b”,
-borderRadius: “50%”,
-animation: “spin 0.7s linear infinite”,
-flexShrink: 0,
-},
-};
-
-/* ─── SPINNER KEYFRAMES (inject once) ──────────────────────────────────── */
-if (typeof document !== “undefined” && !document.getElementById(“cod-spin”)) {
-const st = document.createElement(“style”);
-st.id = “cod-spin”;
-st.textContent = `@keyframes spin{to{transform:rotate(360deg)}} @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');`;
-document.head.appendChild(st);
+h1 {
+font-size: clamp(2rem, 5vw, 3.2rem);
+font-weight: 800;
+letter-spacing: -0.03em;
+line-height: 1;
 }
 
-/* ─── MAIN COMPONENT ────────────────────────────────────────────────────── */
-export default function AurelCODScanner() {
-const [packages,      setPackages]     = useState([]);
-const [processing,    setProcessing]   = useState(false);
-const [progress,      setProgress]     = useState({ done: 0, total: 0, status: “” });
-const [dragging,      setDragging]     = useState(false);
-const [showModal,     setShowModal]    = useState(false);
-const fileRef   = useRef(null);
-const queueRef  = useRef([]);
-const runningRef = useRef(false);
-
-// ── TOTAL (integer centavos) ──────────────────────────────────────────
-const totalCentavos = sumCentavos(packages);
-const okCount  = packages.filter(p => p.status === “ok”).length;
-const errCount = packages.filter(p => p.status === “error”).length;
-
-// ── PROCESS QUEUE ─────────────────────────────────────────────────────
-const processQueue = useCallback(async () => {
-if (runningRef.current) return;
-runningRef.current = true;
-setProcessing(true);
-
-```
-while (queueRef.current.length > 0) {
-  const item = queueRef.current.shift();
-
-  // Mark processing
-  setPackages(prev => prev.map(p => p.id === item.id ? { ...p, status: "processing" } : p));
-
-  setPackages(prev => {
-    const done  = prev.filter(p => p.status === "ok" || p.status === "error").length;
-    const total = prev.length;
-    setProgress({ done, total, status: `Analizando: ${item.filename}` });
-    return prev;
-  });
-
-  try {
-    const base64    = await fileToBase64(item.file);
-    const mediaType = item.file.type || "image/jpeg";
-    const raw       = await extractCODFromImage(base64, mediaType);
-    const cod       = parseCOD(raw);
-
-    setPackages(prev => prev.map(p => p.id !== item.id ? p : {
-      ...p,
-      status: cod !== null ? "ok" : "error",
-      cod:    cod,
-      detail: cod !== null ? `COD: ${raw}` : `IA: ${(raw || "").slice(0, 70)}`,
-    }));
-  } catch (err) {
-    setPackages(prev => prev.map(p => p.id !== item.id ? p : {
-      ...p, status: "error", detail: err.message.slice(0, 70),
-    }));
-  }
-
-  if (queueRef.current.length > 0) {
-    setProgress(pr => ({ ...pr, status: "Esperando antes de la siguiente imagen…" }));
-    await sleep(1200);
-  }
+h1 span {
+color: var(–accent);
 }
 
-setPackages(prev => {
-  const done  = prev.filter(p => p.status === "ok" || p.status === "error").length;
-  setProgress({ done, total: prev.length, status: `✓ Lote completado — ${done} procesados` });
-  return prev;
-});
+.tagline {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.72rem;
+color: var(–muted);
+letter-spacing: 0.1em;
+text-transform: uppercase;
+margin-left: auto;
+white-space: nowrap;
+}
 
-runningRef.current = false;
-setProcessing(false);
-```
+.drop-zone {
+width: 100%;
+max-width: 820px;
+border: 2px dashed var(–border);
+border-radius: 4px;
+padding: 56px 32px;
+text-align: center;
+cursor: pointer;
+transition: border-color 0.2s, background 0.2s;
+position: relative;
+background: var(–surface);
+}
 
-}, []);
+.drop-zone:hover, .drop-zone.drag-over {
+border-color: var(–accent);
+background: #1a1a0a;
+}
 
-// ── ADD FILES ──────────────────────────────────────────────────────────
-const addFiles = useCallback((files) => {
-const imgs = Array.from(files).filter(f => f.type.startsWith(“image/”));
-if (!imgs.length) return;
+.drop-zone input[type=“file”] {
+position: absolute;
+inset: 0;
+opacity: 0;
+cursor: pointer;
+width: 100%;
+height: 100%;
+}
 
-```
-const newPkgs = imgs.map(f => ({ id: uid(), filename: f.name, status: "pending", cod: null, detail: null }));
-const newItems = imgs.map((f, i) => ({ id: newPkgs[i].id, file: f, filename: f.name }));
+.drop-icon {
+font-size: 3rem;
+margin-bottom: 16px;
+display: block;
+}
 
-setPackages(prev => [...prev, ...newPkgs]);
-queueRef.current.push(...newItems);
-processQueue();
-```
+.drop-title {
+font-size: 1.2rem;
+font-weight: 700;
+margin-bottom: 8px;
+}
 
-}, [processQueue]);
+.drop-sub {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.72rem;
+color: var(–muted);
+}
 
-// ── DRAG & DROP ────────────────────────────────────────────────────────
-const onDrop = (e) => {
-e.preventDefault(); setDragging(false);
-addFiles(e.dataTransfer.files);
-};
+.queue {
+width: 100%;
+max-width: 820px;
+margin-top: 32px;
+display: flex;
+flex-direction: column;
+gap: 10px;
+}
 
-// ── DELETE ─────────────────────────────────────────────────────────────
-const deletePkg = (id) => {
-setPackages(prev => prev.filter(p => p.id !== id));
-queueRef.current = queueRef.current.filter(q => q.id !== id);
-};
+.queue-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+padding-bottom: 12px;
+border-bottom: 1px solid var(–border);
+}
 
-// ── CLEAR ALL ──────────────────────────────────────────────────────────
-const clearAll = () => {
-setPackages([]);
-queueRef.current = [];
-runningRef.current = false;
-setProcessing(false);
-setProgress({ done: 0, total: 0, status: “” });
-setShowModal(false);
-};
+.queue-label {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.7rem;
+letter-spacing: 0.15em;
+text-transform: uppercase;
+color: var(–muted);
+}
 
-const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-const showProgress = processing || (progress.status && progress.done > 0);
+.queue-count {
+font-weight: 800;
+color: var(–accent);
+font-size: 0.85rem;
+}
 
-return (
-<div style={S.root}>
-{/* HEADER */}
-<header style={S.header}>
-<div style={S.logoWrap}>
-<div style={S.logoBox}>AP</div>
-<span style={S.logoText}>Aurel <span style={S.logoAccent}>COD</span> Scanner</span>
-</div>
-<div style={S.totalWrap}>
-<div style={S.totalLabel}>Total del día</div>
-<div style={S.totalValue}>{formatDOP(totalCentavos)}</div>
-</div>
+.file-card {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 4px;
+padding: 14px 18px;
+display: grid;
+grid-template-columns: 1fr auto auto;
+align-items: center;
+gap: 12px;
+transition: border-color 0.2s;
+}
+
+.file-card.done { border-color: var(–success); }
+.file-card.error { border-color: var(–error); }
+.file-card.processing { border-color: var(–accent); }
+
+.file-name {
+font-weight: 700;
+font-size: 0.9rem;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+
+.file-size {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.68rem;
+color: var(–muted);
+margin-top: 3px;
+}
+
+.file-status {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.7rem;
+padding: 4px 10px;
+border-radius: 2px;
+white-space: nowrap;
+}
+
+.status-waiting { color: var(–muted); background: #1f1f1f; }
+.status-processing { color: var(–accent); background: #1a1a0a; }
+.status-done { color: var(–success); background: #0a1f17; }
+.status-error { color: var(–error); background: #1f0a0a; }
+
+.remove-btn {
+background: none;
+border: none;
+color: var(–muted);
+cursor: pointer;
+font-size: 1rem;
+line-height: 1;
+padding: 2px 6px;
+border-radius: 2px;
+transition: color 0.15s, background 0.15s;
+}
+
+.remove-btn:hover { color: var(–error); background: #1f0a0a; }
+
+.progress-bar {
+grid-column: 1 / -1;
+height: 3px;
+background: var(–border);
+border-radius: 2px;
+overflow: hidden;
+display: none;
+}
+
+.progress-bar.active { display: block; }
+
+.progress-fill {
+height: 100%;
+background: var(–accent);
+width: 0%;
+transition: width 0.3s;
+}
+
+.actions {
+width: 100%;
+max-width: 820px;
+margin-top: 24px;
+display: flex;
+gap: 12px;
+}
+
+.btn {
+font-family: ‘Syne’, sans-serif;
+font-weight: 700;
+font-size: 0.85rem;
+letter-spacing: 0.05em;
+text-transform: uppercase;
+padding: 14px 28px;
+border: none;
+border-radius: 3px;
+cursor: pointer;
+transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.btn-primary {
+background: var(–accent);
+color: #0d0d0d;
+flex: 1;
+}
+
+.btn-secondary {
+background: var(–surface);
+color: var(–text);
+border: 1px solid var(–border);
+}
+
+.log {
+width: 100%;
+max-width: 820px;
+margin-top: 28px;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 4px;
+padding: 16px 20px;
+font-family: ‘Space Mono’, monospace;
+font-size: 0.7rem;
+color: var(–muted);
+max-height: 160px;
+overflow-y: auto;
+display: none;
+flex-direction: column;
+gap: 4px;
+}
+
+.log.visible { display: flex; }
+
+.log-line { line-height: 1.6; }
+.log-line.ok { color: var(–success); }
+.log-line.err { color: var(–error); }
+.log-line.info { color: var(–accent); }
+
+.unsupported-note {
+font-family: ‘Space Mono’, monospace;
+font-size: 0.7rem;
+color: var(–muted);
+margin-top: 20px;
+max-width: 820px;
+text-align: center;
+line-height: 1.8;
+}
+
+.unsupported-note strong { color: var(–accent2); }
+</style>
+
+</head>
+<body>
+
+<header>
+  <h1>Multi<span>Extract</span></h1>
+  <span class="tagline">Extracción masiva de ZIP</span>
 </header>
 
-```
-  <main style={S.main}>
-    {/* DROP ZONE */}
-    <div
-      style={S.dropZone(dragging)}
-      onClick={() => fileRef.current?.click()}
-      onDragOver={e => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
-    >
-      <input
-        ref={fileRef} type="file" accept="image/*" multiple
-        style={{ display: "none" }}
-        onChange={e => { addFiles(e.target.files); e.target.value = ""; }}
-      />
-      <span style={S.dropIcon}>📦</span>
-      <div style={S.dropTitle}>Arrastra fotos de etiquetas aquí</div>
-      <div style={S.dropSub}>o toca para seleccionar · JPG, PNG, HEIC · múltiples archivos</div>
-    </div>
-
-    {/* PROGRESS */}
-    {showProgress && (
-      <div style={S.progressWrap}>
-        <div style={S.progressHeader}>
-          <span style={S.progressLabel}>Procesando imágenes…</span>
-          <span style={S.progressCount}>{progress.done} / {progress.total}</span>
-        </div>
-        <div style={S.progressBg}>
-          <div style={S.progressFill(pct)} />
-        </div>
-        <div style={S.progressStatus}>{progress.status}</div>
-      </div>
-    )}
-
-    {/* STATS */}
-    {packages.length > 0 && (
-      <div style={S.statsRow}>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Paquetes</div>
-          <div style={S.statVal("#f5c518")}>{packages.length}</div>
-        </div>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Leídos OK</div>
-          <div style={S.statVal("#22c55e")}>{okCount}</div>
-        </div>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Errores</div>
-          <div style={S.statVal("#ef4444")}>{errCount}</div>
-        </div>
-      </div>
-    )}
-
-    {/* BANNER */}
-    {packages.length > 0 && (
-      <div style={S.banner}>
-        <div>
-          <div style={S.bannerEye}>Total COD acumulado</div>
-          <div>
-            <span style={S.bannerAmt}>
-              {(totalCentavos / 100).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            <span style={S.bannerCur}>DOP</span>
-          </div>
-        </div>
-        <div style={S.bannerPkg}>
-          <span style={S.bannerPkgN}>{okCount}</span> paquetes COD
-        </div>
-      </div>
-    )}
-
-    {/* TABLE */}
-    <div style={S.tableWrap}>
-      <div style={S.tableHead}>
-        <div>#</div><div>Archivo / Detalle</div><div>COD (DOP)</div><div>Estado</div><div />
-      </div>
-      {packages.length === 0 ? (
-        <div style={S.emptyState}>
-          <span style={S.emptyIcon}>🗂</span>
-          <div style={S.emptyText}>Sin paquetes — sube las fotos</div>
-        </div>
-      ) : (
-        packages.map((pkg, i) => {
-          let codCell;
-          if (pkg.status === "ok")
-            codCell = <div style={S.rowCodOk}>{pkg.cod.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>;
-          else if (pkg.status === "error")
-            codCell = <div style={S.rowCodErr}>No detectado</div>;
-          else
-            codCell = <div style={S.rowCodProc}><div style={S.spinner} />…</div>;
-
-          const badgeLabel = { ok: "✓ Leído", error: "✗ Error", processing: "… IA", pending: "— Cola" };
-
-          return (
-            <div key={pkg.id} style={{ ...S.row, borderBottom: i === packages.length - 1 ? "none" : "1px solid #1e2028" }}>
-              <div style={S.rowNum}>{String(i + 1).padStart(2, "0")}</div>
-              <div>
-                <div style={S.rowName} title={pkg.filename}>{pkg.filename.length > 22 ? pkg.filename.slice(0, 20) + "…" : pkg.filename}</div>
-                <div style={S.rowDetail}>{pkg.detail || "—"}</div>
-              </div>
-              {codCell}
-              <div><span style={S.badge(pkg.status)}>{badgeLabel[pkg.status]}</span></div>
-              <div>
-                <button style={S.delBtn} onClick={() => deletePkg(pkg.id)}>✕</button>
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  </main>
-
-  {/* BOTTOM BAR */}
-  <div style={S.bottomBar}>
-    <button
-      style={S.clearBtn(packages.length === 0)}
-      disabled={packages.length === 0}
-      onClick={() => setShowModal(true)}
-    >
-      ⚙️ &nbsp;Limpiar todo y reiniciar sesión
-    </button>
-  </div>
-
-  {/* CONFIRM MODAL */}
-  {showModal && (
-    <div style={S.overlay} onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-      <div style={S.modal}>
-        <div style={S.modalIcon}>⚙️</div>
-        <div style={S.modalTitle}>¿Limpiar esta sesión?</div>
-        <div style={S.modalBody}>
-          Se eliminarán todos los registros actuales.<br />
-          Total registrado:
-          <div style={S.modalTotal}>{formatDOP(totalCentavos)}</div>
-        </div>
-        <div style={S.modalActions}>
-          <button style={S.btnCancel} onClick={() => setShowModal(false)}>Cancelar</button>
-          <button style={S.btnConfirm} onClick={clearAll}>Sí, limpiar</button>
-        </div>
-      </div>
-    </div>
-  )}
+<div class="drop-zone" id="dropZone">
+  <input type="file" id="fileInput" multiple accept=".zip">
+  <span class="drop-icon">📦</span>
+  <div class="drop-title">Arrastra tus archivos ZIP aquí</div>
+  <div class="drop-sub">O haz clic para seleccionar — múltiples archivos permitidos</div>
 </div>
-```
 
-);
-}
+<div class="queue" id="queue" style="display:none">
+  <div class="queue-header">
+    <span class="queue-label">Cola de extracción</span>
+    <span class="queue-count" id="queueCount">0 archivos</span>
+  </div>
+  <div id="fileList"></div>
+</div>
+
+<div class="actions" id="actions" style="display:none">
+  <button class="btn btn-primary" id="extractBtn" onclick="extractAll()">⚡ Extraer todo</button>
+  <button class="btn btn-secondary" onclick="clearAll()">Limpiar</button>
+</div>
+
+<div class="log" id="log"></div>
+
+<p class="unsupported-note">
+  ⚠ Esta herramienta soporta archivos <strong>.ZIP</strong> nativamente en el navegador.<br>
+  Para <strong>.RAR / .7z</strong>, necesitas una app de escritorio como <strong>7-Zip</strong> (gratis).
+</p>
+
+<script>
+  const files = [];
+  let extracting = false;
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const queue = document.getElementById('queue');
+  const fileList = document.getElementById('fileList');
+  const actions = document.getElementById('actions');
+  const extractBtn = document.getElementById('extractBtn');
+  const queueCount = document.getElementById('queueCount');
+  const log = document.getElementById('log');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
+
+  function addFiles(newFiles) {
+    newFiles.forEach(f => {
+      if (!f.name.toLowerCase().endsWith('.zip')) {
+        addLog(`"${f.name}" no es un ZIP — omitido.`, 'err');
+        return;
+      }
+      if (files.find(x => x.file.name === f.name && x.file.size === f.size)) return;
+      const entry = { file: f, id: Date.now() + Math.random(), status: 'waiting' };
+      files.push(entry);
+    });
+    renderList();
+  }
+
+  function renderList() {
+    fileList.innerHTML = '';
+    if (files.length === 0) {
+      queue.style.display = 'none';
+      actions.style.display = 'none';
+      return;
+    }
+    queue.style.display = 'flex';
+    actions.style.display = 'flex';
+    queueCount.textContent = `${files.length} archivo${files.length > 1 ? 's' : ''}`;
+
+    files.forEach((entry, i) => {
+      const card = document.createElement('div');
+      card.className = `file-card ${entry.status === 'done' ? 'done' : entry.status === 'error' ? 'error' : entry.status === 'processing' ? 'processing' : ''}`;
+      card.id = `card-${entry.id}`;
+
+      const statusLabels = {
+        waiting: ['waiting', 'status-waiting'],
+        processing: ['extrayendo…', 'status-processing'],
+        done: ['✓ listo', 'status-done'],
+        error: ['✗ error', 'status-error']
+      };
+      const [label, cls] = statusLabels[entry.status] || statusLabels.waiting;
+
+      card.innerHTML = `
+        <div>
+          <div class="file-name">${entry.file.name}</div>
+          <div class="file-size">${formatSize(entry.file.size)}</div>
+        </div>
+        <span class="file-status ${cls}">${label}</span>
+        <button class="remove-btn" onclick="removeFile('${entry.id}')" ${extracting ? 'disabled' : ''}>✕</button>
+        <div class="progress-bar ${entry.status === 'processing' ? 'active' : ''}" id="bar-${entry.id}">
+          <div class="progress-fill" id="fill-${entry.id}"></div>
+        </div>
+      `;
+      fileList.appendChild(card);
+    });
+  }
+
+  function removeFile(id) {
+    const i = files.findIndex(f => f.id == id);
+    if (i >= 0) files.splice(i, 1);
+    renderList();
+  }
+
+  function clearAll() {
+    files.length = 0;
+    log.innerHTML = '';
+    log.classList.remove('visible');
+    renderList();
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function addLog(msg, type = 'info') {
+    log.classList.add('visible');
+    const line = document.createElement('div');
+    line.className = `log-line ${type}`;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function extractAll() {
+    if (extracting) return;
+    const pending = files.filter(f => f.status === 'waiting' || f.status === 'error');
+    if (pending.length === 0) { addLog('No hay archivos pendientes.', 'err'); return; }
+
+    extracting = true;
+    extractBtn.disabled = true;
+    addLog(`Iniciando extracción de ${pending.length} archivo(s)…`, 'info');
+
+    for (const entry of pending) {
+      await extractFile(entry);
+    }
+
+    extracting = false;
+    extractBtn.disabled = false;
+    addLog('✓ Proceso completado.', 'ok');
+  }
+
+  async function extractFile(entry) {
+    entry.status = 'processing';
+    renderList();
+
+    const bar = document.getElementById(`bar-${entry.id}`);
+    const fill = document.getElementById(`fill-${entry.id}`);
+    if (bar) bar.classList.add('active');
+
+    try {
+      const arrayBuffer = await entry.file.arrayBuffer();
+      const zip = await JSZip.loadAsync(arrayBuffer);
+
+      const fileNames = Object.keys(zip.files).filter(n => !zip.files[n].dir);
+      let done = 0;
+
+      for (const name of fileNames) {
+        const zipFile = zip.files[name];
+        const blob = await zipFile.async('blob');
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name.split('/').pop();
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        done++;
+        const pct = Math.round((done / fileNames.length) * 100);
+        if (fill) fill.style.width = pct + '%';
+        addLog(`↓ ${name}`, 'ok');
+
+        // pequeña pausa para no saturar el navegador
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      entry.status = 'done';
+      addLog(`✓ "${entry.file.name}" — ${fileNames.length} archivo(s) extraídos.`, 'ok');
+    } catch (err) {
+      entry.status = 'error';
+      addLog(`✗ Error en "${entry.file.name}": ${err.message}`, 'err');
+    }
+
+    renderList();
+  }
+</script>
+
+</body>
+</html>
