@@ -561,20 +561,19 @@ line-height: 1.9 !important;
     let processed   = 0;
     let anySuccess  = false;
 
-    // FIX #1: leer cada ZIP UNA sola vez y guardar el ArrayBuffer en entry.zipData
+    // Leer y parsear cada ZIP UNA sola vez — guardar objeto JSZip listo
     addLog('Leyendo archivos…', 'info');
     for (const entry of pending) {
       try {
-        entry.zipData = await entry.file.arrayBuffer();
-        const z = await JSZip.loadAsync(entry.zipData);
-        totalFiles += Object.keys(z.files).filter(n => !z.files[n].dir).length;
+        const ab  = await entry.file.arrayBuffer();
+        entry.zipData = await JSZip.loadAsync(ab); // objeto JSZip ya parseado
+        totalFiles += Object.keys(entry.zipData.files).filter(n => !entry.zipData.files[n].dir).length;
       } catch(e) {
-        entry.status  = 'waiting'; // se marcará error en la segunda pasada
         entry.zipData = null;
       }
     }
 
-    // Segunda pasada: extraer usando el buffer ya leído
+    // Segunda pasada: extraer del objeto JSZip ya en memoria
     for (const entry of pending) {
       entry.status = 'processing';
       renderList();
@@ -583,7 +582,6 @@ line-height: 1.9 !important;
       const fill = document.getElementById(`fill-${entry.id}`);
       if (bar) bar.classList.add('active');
 
-      // FIX #1: reusar entry.zipData en vez de releer el archivo
       if (!entry.zipData) {
         entry.status = 'error';
         addLog(`✗ No se pudo leer "${escapeHtml(entry.file.name)}"`, 'err');
@@ -592,7 +590,7 @@ line-height: 1.9 !important;
       }
 
       try {
-        const zip    = await JSZip.loadAsync(entry.zipData);
+        const zip    = entry.zipData; // ya parseado, sin releer
         const names  = Object.keys(zip.files).filter(n => !zip.files[n].dir);
         let localDone = 0;
 
